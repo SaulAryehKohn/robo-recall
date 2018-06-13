@@ -1,3 +1,8 @@
+"""
+This module launches the summary bot, invoked by '@sumbot'.
+It contains methods to interact pythonically with the Slack API.
+The relevant OAuth tokens are available upon request.
+"""
 import os,re,time
 import pandas as pd
 from datetime import datetime
@@ -11,13 +16,12 @@ starterbot_id = None
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 EXAMPLE_COMMAND = "do"
 SUMMARIZE_COMMAND = "summarize"
-MENTION_REGEX = "^<@(|[WU].+?)>(.*)"
+MENTION_REGEX = "^<@(|[WU].+?)>(.*)" # detect call to bot
 
 ### test parameters
-date_from = '2016-11-01'
-
-FROM_TIME = (datetime.strptime(date_from, "%Y-%m-%d") - datetime(1970, 1, 1)).total_seconds()
-TO_TIME = (datetime.now() - datetime(1970,1,1)).total_seconds()
+#date_from = '2016-11-01'
+#FROM_TIME = (datetime.strptime(date_from, "%Y-%m-%d") - datetime(1970, 1, 1)).total_seconds()
+#TO_TIME = (datetime.now() - datetime(1970,1,1)).total_seconds()
 
 def parse_bot_commands(slack_events):
     """
@@ -53,6 +57,7 @@ def handle_command(command, channel):
     # This is where you start to implement more commands!
     if command.startswith(EXAMPLE_COMMAND):
         response = "Sure...write some more code then I can do that!"
+        
     if command.startswith(SUMMARIZE_COMMAND):
         # grab channel history. TODO: get "recent" history -- last week's?
         history = slack_client.api_call("channels.history", 
@@ -65,13 +70,6 @@ def handle_command(command, channel):
         # get information on the poster
         user_asker,time_asker = df.iloc[0,:][['user','ts']]
         
-        # delete call to bot
-        slack_client.api_call(
-            "chat.delete",
-            channel=channel,
-            ts=time_asker,
-            as_user=False
-            )
         
         df_nobots = df[df['subtype'].isna()] # filter bot messages
         # TODO: filter call to bot
@@ -94,6 +92,14 @@ def handle_command(command, channel):
         user=user_asker,
         as_user=False, # sets subtype to "bot message" for easy cleaning
         text=response or default_response
+        )
+    
+    # delete call to bot
+    slack_client.api_call(
+        "chat.delete",
+        channel=channel,
+        ts=time_asker,
+        as_user=False
         )
 
 if __name__ == "__main__":
