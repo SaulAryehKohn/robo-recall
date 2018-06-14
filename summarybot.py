@@ -1,12 +1,8 @@
-"""
-This module launches the summary bot, invoked by '@sumbot'.
-It contains methods to interact pythonically with the Slack API.
-The relevant OAuth tokens are available upon request.
-"""
 import os,re,time
 import pandas as pd
 from datetime import datetime
 from slackclient import SlackClient
+import summarybot_utils as sbut
 
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 INSIGHT_TESTING_TOKEN = os.environ["INSIGHT_TESTING_TOKEN"]
@@ -16,12 +12,8 @@ starterbot_id = None
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 EXAMPLE_COMMAND = "do"
 SUMMARIZE_COMMAND = "summarize"
-MENTION_REGEX = "^<@(|[WU].+?)>(.*)" # detect call to bot
+MENTION_REGEX = "^<@(|[WU].+?)>(.*)"
 
-### test parameters
-#date_from = '2016-11-01'
-#FROM_TIME = (datetime.strptime(date_from, "%Y-%m-%d") - datetime(1970, 1, 1)).total_seconds()
-#TO_TIME = (datetime.now() - datetime(1970,1,1)).total_seconds()
 
 def parse_bot_commands(slack_events):
     """
@@ -50,40 +42,41 @@ def handle_command(command, channel):
         Executes bot command if the command is known
     """
     # Default response is help text for the user
-    default_response = "Not sure what you mean. Try *{}*.".format(SUMMARIZE_COMMAND)
-
+    default_response = "Hi! Not sure what you mean. Try *{}*.".format(SUMMARIZE_COMMAND)
+    
     # Finds and executes the given command, filling in response
     response = None
     # This is where you start to implement more commands!
     if command.startswith(EXAMPLE_COMMAND):
         response = "Sure...write some more code then I can do that!"
-        
-    if command.startswith(SUMMARIZE_COMMAND):
+    while command.startswith(SUMMARIZE_COMMAND):
         # grab channel history. TODO: get "recent" history -- last week's?
         history = slack_client.api_call("channels.history", 
                     token=INSIGHT_TESTING_TOKEN,
                     channel=channel
                     # note that there is a default num_msgs = 100
                     )
-        
-        df = pd.DataFrame(history['messages'])
+        # do an intial filtering on the history
+        df = sbut.filter_history(history)
         # get information on the poster
-        user_asker,time_asker = df.iloc[0,:][['user','ts']]
+        user_asker= df.iloc[0,:]['user']
+        # filter calls to bot XXX TODO: MAKE THIS MORE ELEGANT
+        df = df[~df['text'].apply(lambda x: x.endswith('summarize'))]
         
+        # should we continue?
+        if len(df)<10:
+            response = "_Sorry..._ \
+            there are too few messages for me to summarize. Go read 'em!"
+            break
         
-        df_nobots = df[df['subtype'].isna()] # filter bot messages
-        # TODO: filter call to bot
-        # TODO: filter emoticons and emojis
-        # TODO: filter dataframe to requested time interval
-        # TODO: locate conversation intervals, filter to separate data frames
-        # TODO: "for conversation in conversation_dataframes:
-        #           ..."
-        #       TODO: get main conversationalists
-        #       TODO: extract entities, topics, sentiment <--- THE WHOLE PROJECT...
-        #       TODO: push extracted data into relevant template
-        dialog_combined = df_nobots['text'].str.cat(sep=' ')
-        response = dialog_combined
-    
+        # continuing -- NLP processing
+        dialog_combined = df['text'][::-1].str.cat(sep=' ')
+        entity_dict = sbut.extract_entities(dialog_combined)
+        conversants = sbut.major_conversants(df)
+        # create summary
+        response = sbut.construct_payload(entity_dict, conversants)
+        break
+        
     # In any case, we now have a response
     # Sends the response back to the channel
     slack_client.api_call(
@@ -92,14 +85,6 @@ def handle_command(command, channel):
         user=user_asker,
         as_user=False, # sets subtype to "bot message" for easy cleaning
         text=response or default_response
-        )
-    
-    # delete call to bot
-    slack_client.api_call(
-        "chat.delete",
-        channel=channel,
-        ts=time_asker,
-        as_user=False
         )
 
 if __name__ == "__main__":
