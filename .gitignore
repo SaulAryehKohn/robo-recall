@@ -1,4 +1,5 @@
 # custom
+*.gz
 *.csv
 environment_variables.sh
 

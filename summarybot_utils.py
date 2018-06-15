@@ -119,7 +119,7 @@ def construct_payload(entities_dict, conversants):
     # TODO: consider an "et al." condition for busy chats
     if len(conversants) == 1:
         conversant_string = '{0} wrote about'.format(conversants[0])
-    elif len(converants) == 2:
+    elif len(conversants) == 2:
         conversant_string = '{0} and {1} wrote about'.format(*conversants)
     else:
         conversant_string = '{0} and {1} wrote about'.format(
@@ -128,7 +128,6 @@ def construct_payload(entities_dict, conversants):
             )
     
     for k in nonlocation_entities:
-        print(k)
         payload_dict['{0}_string'.format(k)] = create_firstTwoFromDict_string(entities_dict,k)
     payload_dict['LOC_string'] = create_location_string_from_entity_dict(entities_dict)
     
@@ -140,8 +139,6 @@ def construct_payload(entities_dict, conversants):
         payload = conversant_string+':'
         if payload_dict['EVENT_string']:
             payload+='\n - EVENT: {0}'.format(payload_dict['EVENT_string'])
-        if payload_dict['TIME_string']:
-            payload+='\n - TIME: {0}'.format(payload_dict['TIME_string'])
         if payload_dict['LOC_string']:
             payload+='\n - LOCATION: {0}'.format(payload_dict['LOC_string'])
         if payload_dict['PERSON_string']:
@@ -152,4 +149,6 @@ def construct_payload(entities_dict, conversants):
             payload+='\n - {0}'.format(payload_dict['LANGUAGE_string'])
         if payload_dict['WORK_OF_ART_string']:
             payload+='\n - {0}'.format(payload_dict['WORK_OF_ART_string'])
+        if payload_dict['TIME_string']:
+            payload+='\n - TIME: {0}'.format(payload_dict['TIME_string'])
     return payload
