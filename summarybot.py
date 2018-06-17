@@ -1,6 +1,6 @@
-import os,re,time
+import os,re,time,ast
 import pandas as pd
-from datetime import datetime
+from datetime import datetime,timedelta
 from slackclient import SlackClient
 import summarybot_utils as sbut
 
@@ -10,10 +10,20 @@ slack_client = SlackClient(SLACK_BOT_TOKEN)
 starterbot_id = None
 
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
-EXAMPLE_COMMAND = "do"
+HELP_COMMAND = "help"
 SUMMARIZE_COMMAND = "summarize"
 MENTION_REGEX = "^<@(|[WU].+?)>(.*)"
 
+# TODO: move these into utils or somewhere else
+TOO_FEW_RESPONSE = "_Sorry..._ there are too few messages for me to summarize. Go read 'em!"
+
+HELP_RESPONSE = """I'm SumBot! I summarize stuff that you missed.
+        You can get my help by asking me to:\n
+        *summarize* all- I'll summarize the past 1000 messages on the channel (that's the maximum I'm allowed to see!).\n
+        *summarize* _n_ hours - I'll summarize the past _n_ hours.\n
+        *summarize* _m_ minutes - I'll summarize the past _m_ minutes.\n"""
+
+VALUE_ERROR_RESPONSE = """_Sorry_, I don't understand the time frame you're asking for. \n {0}""".format(HELP_RESPONSE)
 
 def parse_bot_commands(slack_events):
     """
@@ -31,7 +41,8 @@ def parse_bot_commands(slack_events):
 def parse_direct_mention(message_text):
     """
         Finds a direct mention (a mention that is at the beginning) in message text
-        and returns the user ID which was mentioned. If there is no direct mention, returns None
+        and returns the user ID which was mentioned. 
+        If there is no direct mention, returns None
     """
     matches = re.search(MENTION_REGEX, message_text)
     # the first group contains the username, the second group contains the remaining message
@@ -42,37 +53,74 @@ def handle_command(command, channel):
         Executes bot command if the command is known
     """
     # Default response is help text for the user
-    default_response = "Hi! Not sure what you mean. Try *{}*.".format(SUMMARIZE_COMMAND)
+    default_response = "Hi! Not sure what you mean. Try *{0}*.\n {1}".format(SUMMARIZE_COMMAND,HELP_RESPONSE)
     
     # Finds and executes the given command, filling in response
     response = None
-    # This is where you start to implement more commands!
-    if command.startswith(EXAMPLE_COMMAND):
-        response = "Sure...write some more code then I can do that!"
+    highlights = None
+    
     while command.startswith(SUMMARIZE_COMMAND):
-        # grab channel history. TODO: get "recent" history -- last week's?
         history = slack_client.api_call("channels.history", 
                     token=INSIGHT_TESTING_TOKEN,
-                    channel=channel
-                    # note that there is a default num_msgs = 100
+                    channel=channel,
+                    count=1000
                     )
-        # do an intial filtering on the history
+        # do an intial filtering on the history: get rid of emojis and user tags.
         df = sbut.filter_history(history)
         # get information on the poster
         user_asker= df.iloc[0,:]['user']
+        
+        # XXX TODO: move this to summarybot_utils
+        if command.endswith('hour') or command.endswith('hours'):
+            try:
+                n_hour = float(command.split()[1]) 
+                ts_oldest = time.time()-timedelta(hours = n_hour).total_seconds()
+            except ValueError:
+                response = VALUE_ERROR_RESPONSE
+                break
+        elif command.endswith('minute') or command.endswith('minutes'):
+            try:
+                n_mins = float(command.split()[1]) 
+                ts_oldest = time.time()-timedelta(minutes = n_mins).total_seconds()
+            except ValueError:
+                response = VALUE_ERROR_RESPONSE
+                break
+        elif command_endswidth('all'):
+            ts_oldest = 0
+        else:
+            response = VALUE_ERROR_RESPONSE
+            break
+        
+        # time-filter
+        df = df[df['ts'] > ts_oldest]
+        
         # filter calls to bot XXX TODO: MAKE THIS MORE ELEGANT
-        df = df[~df['text'].apply(lambda x: x.endswith('summarize'))]
+        df = df[~df['text'].apply(lambda x: 'summarize' in x)]
+        
+        # XXX TODO: move to summarybot_utils
+        # count reactions: "highlights" have a >{react_factor}sigma deviation from average
+        react_factor = 4
+        df['reaction_count'] = df['reactions'].fillna("[]").apply(
+                                lambda x: len(ast.literal_eval(x))
+                                )
+        meanReact,stdReact = df['reaction_count'].mean(),df['reaction_count'].std()
+        highlight_df = df[df['reaction_count']>meanReact+react_factor*stdReact]
+        if len(highlight_df)>0:
+            for i in range(highlight_df.shape[0]):
+                user_h,text_h = highlight_df[['user','text']]
+                highlights+='"raised_hands: *Highlight*: <@{0}>: {1}\n'.format(
+                                                                 user_h,text_h)
+            
         
         # should we continue?
         if len(df)<10:
-            response = "_Sorry..._ \
-            there are too few messages for me to summarize. Go read 'em!"
+            response = TOO_FEW_RESPONSE
             break
         
         # continuing -- NLP processing
         dialog_combined = df['text'][::-1].str.cat(sep=' ')
         entity_dict = sbut.extract_entities(dialog_combined)
-        conversants = sbut.major_conversants(df)
+        conversants = sbut.get_conversants(df)
         # create summary
         response = sbut.construct_payload(entity_dict, conversants)
         break

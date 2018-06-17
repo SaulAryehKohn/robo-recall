@@ -1,6 +1,4 @@
 """     
-TODO: filter call to bot
-
 TODO: filter dataframe to requested time interval
 TODO: locate conversation intervals, filter to separate data frames
      TODO: "for conversation in conversation_dataframes:"
@@ -39,12 +37,11 @@ def filter_history(slack_history):
     df['text'] = df['text'].apply(lambda x: tag_pattern.sub('',x)) # remove user tags
     return df
 
-def major_conversants(df):
+def get_conversants(df):
     """
     Given a DataFrame with a 'user' column, locate the major talkers.
     Returns a list of the user tags.
     """
-    # XXX TODO
     user_set = set(df['user'])
     user_tags = ['<@{}>'.format(id) for id in user_set]
     return user_tags
@@ -92,7 +89,7 @@ def create_firstTwoFromDict_string(dct,key):
             kstring = '{0} and {1}'.format(*list(dct[key])[:2])
     return kstring
 
-def create_location_string_from_entity_dict(dct):
+def create_locationFromEntityDict_string(dct):
     """
     Generate a string for locations, according to relevance
     priorities: GPE > FAC > LOC (country/city/state > named places > lakes etc.)
@@ -129,7 +126,7 @@ def construct_payload(entities_dict, conversants):
     
     for k in nonlocation_entities:
         payload_dict['{0}_string'.format(k)] = create_firstTwoFromDict_string(entities_dict,k)
-    payload_dict['LOC_string'] = create_location_string_from_entity_dict(entities_dict)
+    payload_dict['LOC_string'] = create_locationFromEntityDict_string(entities_dict)
     
     # situation: no entities were extracted
     # XXX TODO: LOCATE SUBJECT NOUNS IN SPACY SPAN
