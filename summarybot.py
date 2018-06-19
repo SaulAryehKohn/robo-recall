@@ -85,7 +85,7 @@ def handle_command(command, channel):
             except ValueError:
                 response = VALUE_ERROR_RESPONSE
                 break
-        elif command_endswidth('all'):
+        elif command.endswidth('all'):
             ts_oldest = 0
         else:
             response = VALUE_ERROR_RESPONSE
