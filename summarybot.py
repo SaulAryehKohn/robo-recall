@@ -1,8 +1,11 @@
 import os,re,time,ast
 import pandas as pd
 from datetime import datetime,timedelta
+from flask import abort, Flask, jsonify, request
 from slackclient import SlackClient
 import summarybot_utils as sbut
+
+app = Flask(__name__)
 
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 INSIGHT_TESTING_TOKEN = os.environ["INSIGHT_TESTING_TOKEN"]
@@ -48,6 +51,12 @@ def parse_direct_mention(message_text):
     # the first group contains the username, the second group contains the remaining message
     return (matches.group(1), matches.group(2).strip()) if matches else (None, None)
 
+def is_request_valid(request):
+    is_token_valid = request.form['token'] == SLACK_BOT_TOKEN
+    is_team_id_valid = request.form['team_id'] == INSIGHT_TESTING_TOKEN
+
+    return is_token_valid and is_team_id_valid
+
 def handle_command(command, channel):
     """
         Executes bot command if the command is known
@@ -85,44 +94,47 @@ def handle_command(command, channel):
             except ValueError:
                 response = VALUE_ERROR_RESPONSE
                 break
-        elif command.endswidth('all'):
-            ts_oldest = 0
+        elif command.endswith('all'):
+            ts_oldest = 0.
         else:
             response = VALUE_ERROR_RESPONSE
             break
         
         # time-filter
-        df = df[df['ts'] > ts_oldest]
+        df = df[df['ts'].astype(float) > ts_oldest]
         
         # filter calls to bot XXX TODO: MAKE THIS MORE ELEGANT
         df = df[~df['text'].apply(lambda x: 'summarize' in x)]
-        
-        # XXX TODO: move to summarybot_utils
-        # count reactions: "highlights" have a >{react_factor}sigma deviation from average
-        react_factor = 4
-        df['reaction_count'] = df['reactions'].fillna("[]").apply(
-                                lambda x: len(ast.literal_eval(x))
-                                )
-        meanReact,stdReact = df['reaction_count'].mean(),df['reaction_count'].std()
-        highlight_df = df[df['reaction_count']>meanReact+react_factor*stdReact]
-        if len(highlight_df)>0:
-            for i in range(highlight_df.shape[0]):
-                user_h,text_h = highlight_df[['user','text']]
-                highlights+='"raised_hands: *Highlight*: <@{0}>: {1}\n'.format(
-                                                                 user_h,text_h)
-            
         
         # should we continue?
         if len(df)<10:
             response = TOO_FEW_RESPONSE
             break
         
+        # XXX TODO: move to summarybot_utils
+        # count reactions: "highlights" have a >{react_factor}sigma deviation from average
+        if 'reactions' in df.columns:
+            react_factor = 4
+            df['reaction_count'] = df['reactions'].fillna("").apply(
+                                    lambda x: len(x)
+                                    )
+            meanReact,stdReact = df['reaction_count'].mean(),df['reaction_count'].std()
+            highlight_df = df[df['reaction_count']>meanReact+react_factor*stdReact]
+            if len(highlight_df)>0:
+                for i in range(highlight_df.shape[0]):
+                    user_h,text_h = highlight_df[['user','text']]
+                    highlights+='"raised_hands: *Highlight*: <@{0}>: {1}\n'.format(
+                                                                     user_h,text_h)
+        
         # continuing -- NLP processing
         dialog_combined = df['text'][::-1].str.cat(sep=' ')
         entity_dict = sbut.extract_entities(dialog_combined)
+        lemmad_nouns = sbut.extract_lemmatized_tokenized_nouns(df)
+        print(lemmad_nouns)
+        topic_list = sbut.extract_topics(lemmad_nouns,n_terms=5)
         conversants = sbut.get_conversants(df)
         # create summary
-        response = sbut.construct_payload(entity_dict, conversants)
+        response = sbut.construct_payload(entity_dict, conversants, topic_list)
         break
         
     # In any case, we now have a response
