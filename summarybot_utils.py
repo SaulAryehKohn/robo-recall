@@ -1,5 +1,8 @@
-import re,itertools
+import re, itertools, time
+from datetime import datetime,timedelta
+import numpy as np
 import pandas as pd
+from collections import Counter
 import spacy
 from gensim import corpora, models, similarities
 from nltk.corpus import stopwords
@@ -9,14 +12,20 @@ stop_words = stopwords.words('english')
 # these are long loads, but they only happen once. Requires ~ 9 GB of RAM
 print('loading NLP')
 nlp = spacy.load('en_core_web_lg') 
-#nlp = spacy.load('en')
 print('loading Dictionary')
 dictionary = corpora.Dictionary.load_from_text('models/_wordids.txt.bz2')
 print('loading Corpus')
 # this is a 7.5 GB file that is difficult to share online
-corpus = corpora.MmCorpus('../../wikidump/_tfidf.mm.bz2') 
+corpus = corpora.MmCorpus('models/_tfidf.mm.bz2') 
 print('loading LDA model')
 lda = models.ldamodel.LdaModel.load('models/enwiki_ldamodel.model')
+lda_topics_named = pd.read_csv('models/topic_list.csv', index_col=0, header=None, 
+                                names=['index','topic'])
+# This is very slow
+#print('loading word vectors')
+#word_vectors=models.KeyedVectors.load_word2vec_format('data/GoogleNews-vectors-negative300.bin.gz', binary=True)
+# trick get the word_vector object cached for fast querying later
+#_ = word_vectors.most_similar(positive=["apple"])
 
 # entities
 interesting_entity_types = ['EVENT','PERSON','PRODUCT',
@@ -24,6 +33,22 @@ interesting_entity_types = ['EVENT','PERSON','PRODUCT',
                             'FAC','GPE','LOC', # locations
                             'LANGUAGE','WORK_OF_ART'] #others               
 nonlocation_entities = ['EVENT','PERSON','PRODUCT','ORG','TIME','LANGUAGE','WORK_OF_ART']
+
+def parse_time_command(command):
+    """
+    Get oldest response to filter the conversation down to.
+    """
+    if command.endswith('hour') or command.endswith('hours'):
+        n_hour = float(command.split()[1]) 
+        ts_oldest = time.time()-timedelta(hours = n_hour).total_seconds()
+    elif command.endswith('minute') or command.endswith('minutes'):
+        n_mins = float(command.split()[1]) 
+        ts_oldest = time.time()-timedelta(minutes = n_mins).total_seconds()
+    elif command.endswith('all'):
+        ts_oldest = 0.
+    else:
+        raise ValueError
+    return ts_oldest
 
 def filter_history(slack_history):
     """
@@ -73,7 +98,31 @@ def extract_entities(conv_string):
     dct_ = {k:set(dct[k]) for k in dct.keys()}
     return dct_
 
-def extract_sentiment(df, model=None):
+def extract_highlights(df,react_factor=4):
+    """
+    Perform outlier detection on emoji-count per-comment.
+    Counts deviant by more than react_factor*sigma are classified
+    as highlights of the discussion.
+    """
+    if 'reactions' in df.columns:
+        df['reaction_count'] = df['reactions'].fillna("").apply(
+                                lambda x: len(x))
+        meanReact = df['reaction_count'].mean()
+        stdReact = df['reaction_count'].std()
+        highlight_df = df[df['reaction_count']>meanReact+react_factor*stdReact]
+        if len(highlight_df)>0:
+            highlights=''
+            for i in range(highlight_df.shape[0]):
+                user_h,text_h = highlight_df[['user','text']]
+                highlights+='"raised_hands: *Highlight*: <@{0}>: {1}\n'.format(
+                                                                 user_h,text_h)
+            return highlights
+        else:
+            return None
+    else:
+        return None
+
+def extract_sentiment(df):
     """
     Given a conversation DataFrame as input, return the sentiment
     based on a pretrained model.
@@ -97,7 +146,20 @@ def extract_lemmatized_tokenized_nouns(df,min_length=4):
             dlg_out.append(nouns_sentarr)
     return dlg_out
 
-def extract_topics(dialog_list,dictionary=dictionary,topic_model=lda,n_terms=3):
+def outlier_word_detection(df,sigma=1):
+    """
+    Given a DataFrame with a list of utterances, find terms that 
+    appear erroneously often in the conversation, and return them.
+    """
+    dialog_list = df['text'][::-1].tolist()
+    list_of_terms = list(itertools.chain.from_iterable(dialog_list))
+    counts = Counter(list_of_terms)
+    m = np.mean([counts[k] for k in counts.keys()])
+    s = np.std([counts[k] for k in counts.keys()])
+    outliers = [w for w in counts.keys() if counts[w]>m+s and w not in stop_words and len(w)>1]
+    return outliers
+
+def extract_topics(dialog_list, dictionary=dictionary, topic_model=lda, n_terms=3, return_broad_themes=True):
     """
     For a list of strings, create a Bag of Words from a gensim dictionary object. 
     Use a specified LDA topic_model to generate topics from the BoW, 
@@ -107,13 +169,24 @@ def extract_topics(dialog_list,dictionary=dictionary,topic_model=lda,n_terms=3):
     dlg_bow = dictionary.doc2bow(dialog_list)
     # get highest-weight topics
     topics = sorted(topic_model.get_document_topics(dlg_bow), key=lambda x: x[1])[::-1]
+    topic_names = [lda_topics_named['topic'][i] for i,_ in topics]
     term_tuple_list = list(itertools.chain.from_iterable(
                                [topic_model.get_topic_terms(t[0]) for t in topics]
                                )
                             )
     top_n_terms = sorted(term_tuple_list, key=lambda x: x[1])[::-1][:n_terms]
     decode_top_n_terms = [dictionary[tp[0]] for tp in top_n_terms]
-    return decode_top_n_terms
+    if not return_broad_themes:
+        return decode_top_n_terms
+    else:
+        return (topic_names,decode_top_n_terms)
+
+def sum_topic_vectors(topic_list):
+    topic_list = [t for t in topic_list if t in word_vectors.vocab]
+    if len(topic_list) < 2:
+        return None
+    synth = word_vectors.most_similar(positive=topic_list)[0][0]
+    return synth
 
 def create_firstTwoFromDict_string(dct,key):
     """
@@ -144,10 +217,11 @@ def create_locationFromEntityDict_string(dct):
         locstring = create_firstTwoFromDict_string(dct,'LOC')
     return locstring
 
-def construct_payload(entities_dict, conversants, topic_list):
+def construct_payload(entities_dict, conversants, topic_list,
+                      topic_names=None, highlights=None, enable_w2v=False):
     """
     Create the summary string:
-        - create list of major conversants (flagging a dominant speaker)
+        - create list of conversants
         - extract the most pertinent entities
         - frame summary in terms of mood
     """
@@ -167,9 +241,21 @@ def construct_payload(entities_dict, conversants, topic_list):
     
     # topics
     if len(topic_list)>0:
-        payload = '{0} topics: {1}\n'.format(conversant_string, topic_list)
+        if topic_names:
+            payload = '{0}, broadly: {1}'.format(conversant_string,topic_names[0])
+            payload += '\n in terms of: {0}\n'.format(topic_list)
+        else:
+            payload = '{0} topics: {1}\n'.format(conversant_string, topic_list)
+        if enable_w2v:
+            synthesized_topics = sum_topic_vectors(topic_list)
+            if synthesized_topics:
+                payload+= '(I think these topics sum to {0})\n'.format(synthesized_topics)
     else:
         payload = conversant_string
+    
+    # highlights
+    if highlights:
+        payload += highlights
     
     # get entities and log in dict
     for k in nonlocation_entities:
@@ -181,13 +267,15 @@ def construct_payload(entities_dict, conversants, topic_list):
     
     # situation: no entities were extracted
     if all(v==None for v in payload_dict.values()):
-        payload+="... I didn't detect any other important things."
+        payload+="\n"
     else:
         payload+="The following things came up:"
         if payload_dict['EVENT_string']:
             payload+='\n - EVENT: {0}'.format(payload_dict['EVENT_string'])
         if payload_dict['LOC_string']:
             payload+='\n - LOCATION: {0}'.format(payload_dict['LOC_string'])
+        if payload_dict['TIME_string']:
+            payload+='\n - TIME: {0}'.format(payload_dict['TIME_string'])
         if payload_dict['PERSON_string']:
             payload+='\n - {0}'.format(payload_dict['PERSON_string'])
         if payload_dict['ORG_string']:
@@ -196,6 +284,4 @@ def construct_payload(entities_dict, conversants, topic_list):
             payload+='\n - {0}'.format(payload_dict['LANGUAGE_string'])
         if payload_dict['WORK_OF_ART_string']:
             payload+='\n - {0}'.format(payload_dict['WORK_OF_ART_string'])
-        if payload_dict['TIME_string']:
-            payload+='\n - TIME: {0}'.format(payload_dict['TIME_string'])
     return payload

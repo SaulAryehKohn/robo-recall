@@ -1,32 +1,29 @@
-import os,re,time,ast
+import os,re,time
 import pandas as pd
-from datetime import datetime,timedelta
 from flask import abort, Flask, jsonify, request
 from slackclient import SlackClient
 import summarybot_utils as sbut
+import summarybot_ref as sref
+#app = Flask(__name__)
 
-app = Flask(__name__)
-
+#####################################################################
+# constants
+#####################################################################
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 INSIGHT_TESTING_TOKEN = os.environ["INSIGHT_TESTING_TOKEN"]
 slack_client = SlackClient(SLACK_BOT_TOKEN)
 starterbot_id = None
-
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 HELP_COMMAND = "help"
 SUMMARIZE_COMMAND = "summarize"
 MENTION_REGEX = "^<@(|[WU].+?)>(.*)"
+TOO_FEW_RESPONSE = sref.too_few_response
+HELP_RESPONSE = sref.help_response
+VALUE_ERROR_RESPONSE = sref.value_error_response
 
-# TODO: move these into utils or somewhere else
-TOO_FEW_RESPONSE = "_Sorry..._ there are too few messages for me to summarize. Go read 'em!"
-
-HELP_RESPONSE = """I'm SumBot! I summarize stuff that you missed.
-        You can get my help by asking me to:\n
-        *summarize* all- I'll summarize the past 1000 messages on the channel (that's the maximum I'm allowed to see!).\n
-        *summarize* _n_ hours - I'll summarize the past _n_ hours.\n
-        *summarize* _m_ minutes - I'll summarize the past _m_ minutes.\n"""
-
-VALUE_ERROR_RESPONSE = """_Sorry_, I don't understand the time frame you're asking for. \n {0}""".format(HELP_RESPONSE)
+#####################################################################
+# helper methods
+#####################################################################
 
 def parse_bot_commands(slack_events):
     """
@@ -48,14 +45,13 @@ def parse_direct_mention(message_text):
         If there is no direct mention, returns None
     """
     matches = re.search(MENTION_REGEX, message_text)
-    # the first group contains the username, the second group contains the remaining message
+    # the first group contains the username, 
+    # the second group contains the remaining message
     return (matches.group(1), matches.group(2).strip()) if matches else (None, None)
 
-def is_request_valid(request):
-    is_token_valid = request.form['token'] == SLACK_BOT_TOKEN
-    is_team_id_valid = request.form['team_id'] == INSIGHT_TESTING_TOKEN
-
-    return is_token_valid and is_team_id_valid
+#####################################################################
+# bot internals
+#####################################################################
 
 def handle_command(command, channel):
     """
@@ -72,31 +68,17 @@ def handle_command(command, channel):
         history = slack_client.api_call("channels.history", 
                     token=INSIGHT_TESTING_TOKEN,
                     channel=channel,
-                    count=1000
+                    count=1000 #max
                     )
         # do an intial filtering on the history: get rid of emojis and user tags.
         df = sbut.filter_history(history)
         # get information on the poster
         user_asker= df.iloc[0,:]['user']
         
-        # XXX TODO: move this to summarybot_utils
-        if command.endswith('hour') or command.endswith('hours'):
-            try:
-                n_hour = float(command.split()[1]) 
-                ts_oldest = time.time()-timedelta(hours = n_hour).total_seconds()
-            except ValueError:
-                response = VALUE_ERROR_RESPONSE
-                break
-        elif command.endswith('minute') or command.endswith('minutes'):
-            try:
-                n_mins = float(command.split()[1]) 
-                ts_oldest = time.time()-timedelta(minutes = n_mins).total_seconds()
-            except ValueError:
-                response = VALUE_ERROR_RESPONSE
-                break
-        elif command.endswith('all'):
-            ts_oldest = 0.
-        else:
+        # get the requested time span to filter by
+        try:
+            ts_oldest = sbut.parse_time_command(command)
+        except ValueError:
             response = VALUE_ERROR_RESPONSE
             break
         
@@ -111,30 +93,24 @@ def handle_command(command, channel):
             response = TOO_FEW_RESPONSE
             break
         
-        # XXX TODO: move to summarybot_utils
-        # count reactions: "highlights" have a >{react_factor}sigma deviation from average
-        if 'reactions' in df.columns:
-            react_factor = 4
-            df['reaction_count'] = df['reactions'].fillna("").apply(
-                                    lambda x: len(x)
-                                    )
-            meanReact,stdReact = df['reaction_count'].mean(),df['reaction_count'].std()
-            highlight_df = df[df['reaction_count']>meanReact+react_factor*stdReact]
-            if len(highlight_df)>0:
-                for i in range(highlight_df.shape[0]):
-                    user_h,text_h = highlight_df[['user','text']]
-                    highlights+='"raised_hands: *Highlight*: <@{0}>: {1}\n'.format(
-                                                                     user_h,text_h)
-        
         # continuing -- NLP processing
         dialog_combined = df['text'][::-1].str.cat(sep=' ')
+        
+        #TODO: sentiment detect on CLEANED DataFrame
+        # (we want VADER score per utterance)
+        
+        # Outlier detection: emoji count and words
+        highlights = sbut.extract_highlights(df)
+        outliers = sbut.outlier_word_detection(df)
+        
         entity_dict = sbut.extract_entities(dialog_combined)
         lemmad_nouns = sbut.extract_lemmatized_tokenized_nouns(df)
-        print(lemmad_nouns)
-        topic_list = sbut.extract_topics(lemmad_nouns,n_terms=5)
+        topic_names,topic_list = sbut.extract_topics(lemmad_nouns,n_terms=3)
+        topic_list += outliers
         conversants = sbut.get_conversants(df)
         # create summary
-        response = sbut.construct_payload(entity_dict, conversants, topic_list)
+        response = sbut.construct_payload(entity_dict, conversants, topic_list,
+                                          highlights=highlights,topic_names=topic_names)
         break
         
     # In any case, we now have a response
@@ -147,9 +123,13 @@ def handle_command(command, channel):
         text=response or default_response
         )
 
+#####################################################################
+# launch!
+#####################################################################
+
 if __name__ == "__main__":
     if slack_client.rtm_connect(with_team_state=False):
-        print("Starter Bot connected and running!")
+        print("Bot connected and running!")
         # Read bot's user ID by calling Web API method `auth.test`
         starterbot_id = slack_client.api_call("auth.test")["user_id"]
         while True:
