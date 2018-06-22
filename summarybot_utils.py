@@ -182,6 +182,11 @@ def extract_topics(dialog_list, dictionary=dictionary, topic_model=lda, n_terms=
         return (topic_names,decode_top_n_terms)
 
 def sum_topic_vectors(topic_list):
+    """
+    Given a list of strings, attempt to translate them into GoogleNews
+    word vectors, aggregate them, and calculate the most similar vector
+    in the vocabulary.
+    """
     topic_list = [t for t in topic_list if t in word_vectors.vocab]
     if len(topic_list) < 2:
         return None

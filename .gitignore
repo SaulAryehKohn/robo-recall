@@ -2,6 +2,8 @@
 *xlsx
 *.gz
 *.csv
+*bz2
+*pkl
 environment_variables.sh
 
 # Byte-compiled / optimized / DLL files
