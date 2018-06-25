@@ -1,8 +1,12 @@
+from flask import abort, Flask, jsonify, request
 import os,re,time
 import pandas as pd
+import requests
 from slackclient import SlackClient
 import summarybot_utils as sbut
 import summarybot_ref as sref
+from zappa.async import task
+app = Flask(__name__)
 
 #####################################################################
 # constants
@@ -47,14 +51,17 @@ def parse_direct_mention(message_text):
     # the second group contains the remaining message
     return (matches.group(1), matches.group(2).strip()) if matches else (None, None)
 
+def is_request_valid(request):
+    is_token_valid = request.form['token'] == os.environ['SLACK_VERIFICATION_TOKEN']
+    is_team_id_valid = request.form['team_id'] == os.environ['SLACK_TEAM_ID']
+    return is_token_valid and is_team_id_valid
+
 #####################################################################
 # bot internals
 #####################################################################
 
-def handle_command(command, channel):
-    """
-        Executes bot command if the command is known
-    """
+@task
+def handle_command(request_form, response_url):
     # Default response is help text for the user
     default_response = "Hi! Not sure what you mean. Try *{0}*.\n {1}".format(SUMMARIZE_COMMAND,HELP_RESPONSE)
     
@@ -62,10 +69,10 @@ def handle_command(command, channel):
     response = None
     highlights = None
     
-    while command.startswith(SUMMARIZE_COMMAND):
+    while True:
         history = slack_client.api_call("channels.history", 
                     token=INSIGHT_TESTING_TOKEN,
-                    channel=channel,
+                    channel=request_form['channel_id'],
                     count=1000 #max
                     )
         # do an intial filtering on the history: get rid of emojis and user tags.
@@ -75,7 +82,7 @@ def handle_command(command, channel):
         
         # get the requested time span to filter by
         try:
-            ts_oldest = sbut.parse_time_command(command)
+            ts_oldest = sbut.parse_time_command(request_form['text'])
         except ValueError:
             response = VALUE_ERROR_RESPONSE
             break
@@ -113,29 +120,15 @@ def handle_command(command, channel):
         
     # In any case, we now have a response
     # Sends the response back to the channel
-    slack_client.api_call(
-        "chat.postEphemeral", #visible only to user
-        channel=channel,
-        user=user_asker,
-        as_user=False, # sets subtype to "bot message" for easy cleaning
-        text=response or default_response
-        )
-
-#####################################################################
-# launch!
-#####################################################################
-
-if __name__ == "__main__":
-    if slack_client.rtm_connect(with_team_state=False):
-        print("Bot connected and running!")
-        # Read bot's user ID by calling Web API method `auth.test`
-        starterbot_id = slack_client.api_call("auth.test")["user_id"]
-        while True:
-            command, channel = parse_bot_commands(slack_client.rtm_read())
-            if command:
-                handle_command(command, channel)
-            time.sleep(RTM_READ_DELAY)
-    else:
-        print("Connection failed. Exception traceback printed above.")
-
-
+    data = {'response_type':'ephemeral', 'text':response}
+    requests.post(response_url, json=data)
+    
+@app.route('/summarize',methods=['POST'])
+def summarize():
+    if not is_request_valid(request):
+        abort(400)
+    handle_command(request.form,request.form['response_url'])
+    return jsonify(
+            response_type = "ephemeral",
+            text = ":robot_face:"
+          )
