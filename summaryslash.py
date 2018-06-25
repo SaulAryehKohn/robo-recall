@@ -130,5 +130,5 @@ def summarize():
     handle_command(request.form,request.form['response_url'])
     return jsonify(
             response_type = "ephemeral",
-            text = ""
+            text = ":robot_face:"
           )
