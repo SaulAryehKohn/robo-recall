@@ -52,6 +52,9 @@ def parse_direct_mention(message_text):
     return (matches.group(1), matches.group(2).strip()) if matches else (None, None)
 
 def is_request_valid(request):
+    """
+        Catch 400 error
+    """
     is_token_valid = request.form['token'] == os.environ['SLACK_VERIFICATION_TOKEN']
     is_team_id_valid = request.form['team_id'] == os.environ['SLACK_TEAM_ID']
     return is_token_valid and is_team_id_valid
@@ -62,6 +65,13 @@ def is_request_valid(request):
 
 @task
 def handle_command(request_form, response_url):
+    """
+        This (asychronous) task represents the major bot internals.
+        Data cleaning, outlier detection and summarization take place
+        within the "while" clause, since we need to catch service errors
+        from the Slack API and `break` if needed.
+    """
+
     # Default response is help text for the user
     default_response = "Hi! Not sure what you mean. Try *{0}*.\n {1}".format(SUMMARIZE_COMMAND,HELP_RESPONSE)
     
@@ -77,8 +87,6 @@ def handle_command(request_form, response_url):
                     )
         # do an intial filtering on the history: get rid of emojis and user tags.
         df = sbut.filter_history(history)
-        # get information on the poster
-        user_asker= df.iloc[0,:]['user']
         
         # get the requested time span to filter by
         try:
@@ -90,25 +98,21 @@ def handle_command(request_form, response_url):
         # time-filter
         df = df[df['ts'].astype(float) > ts_oldest]
         
-        # filter calls to bot XXX TODO: MAKE THIS MORE ELEGANT
-        df = df[~df['text'].apply(lambda x: 'summarize' in x)]
-        
         # should we continue?
         if len(df)<10:
             response = TOO_FEW_RESPONSE
             break
         
         # continuing -- NLP processing
+        # create bag of words
         dialog_combined = df['text'][::-1].str.cat(sep=' ')
         
-        #TODO: sentiment detect on CLEANED DataFrame
-        # (we want VADER score per utterance)
-        
         # Outlier detection: emoji count and words
-        highlights = sbut.extract_highlights(df)
+        highlights = sbut.extract_highlights(df,react_factor=3)
         outliers = sbut.outlier_word_detection(df)
         
         entity_dict = sbut.extract_entities(dialog_combined)
+        # clean BoW
         lemmad_nouns = sbut.extract_lemmatized_tokenized_nouns(df)
         topic_names,topic_list = sbut.extract_topics(lemmad_nouns,n_terms=3)
         topic_list += outliers
