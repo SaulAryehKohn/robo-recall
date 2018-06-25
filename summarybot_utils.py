@@ -113,21 +113,15 @@ def extract_highlights(df,react_factor=4):
         if len(highlight_df)>0:
             highlights=''
             for i in range(highlight_df.shape[0]):
-                user_h,text_h = highlight_df[['user','text']]
-                highlights+='"raised_hands: *Highlight*: <@{0}>: {1}\n'.format(
+                user_h = highlight_df['user'].iloc[0]
+                text_h = highlight_df['text'].iloc[0]
+                highlights+=':raised_hands: *Highlight*: <@{0}>: {1}\n'.format(
                                                                  user_h,text_h)
             return highlights
         else:
             return None
     else:
         return None
-
-def extract_sentiment(df):
-    """
-    Given a conversation DataFrame as input, return the sentiment
-    based on a pretrained model.
-    """
-    return None
 
 def extract_lemmatized_tokenized_nouns(df,min_length=4):
     """
