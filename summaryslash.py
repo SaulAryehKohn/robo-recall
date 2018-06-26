@@ -119,7 +119,8 @@ def handle_command(request_form, response_url):
         conversants = sbut.get_conversants(df)
         # create summary
         response = sbut.construct_payload(entity_dict, conversants, topic_list,
-                                          highlights=highlights,topic_names=topic_names)
+                                          highlights=highlights,topic_names=topic_names,
+                                          specific_terms=False)
         break
         
     # In any case, we now have a response

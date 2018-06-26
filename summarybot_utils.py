@@ -153,7 +153,7 @@ def outlier_word_detection(df,sigma=1):
     outliers = [w for w in counts.keys() if counts[w]>m+s and w not in stop_words and len(w)>1]
     return outliers
 
-def extract_topics(dialog_list, dictionary=dictionary, topic_model=lda, n_terms=3, return_broad_themes=True):
+def extract_topics(dialog_list, dictionary=dictionary, topic_model=lda, n_terms=3):
     """
     For a list of strings, create a Bag of Words from a gensim dictionary object. 
     Use a specified LDA topic_model to generate topics from the BoW, 
@@ -170,10 +170,7 @@ def extract_topics(dialog_list, dictionary=dictionary, topic_model=lda, n_terms=
                             )
     top_n_terms = sorted(term_tuple_list, key=lambda x: x[1])[::-1][:n_terms]
     decode_top_n_terms = [dictionary[tp[0]] for tp in top_n_terms]
-    if not return_broad_themes:
-        return decode_top_n_terms
-    else:
-        return (topic_names,decode_top_n_terms)
+    return (topic_names,decode_top_n_terms)
 
 def sum_topic_vectors(topic_list):
     """
@@ -217,12 +214,10 @@ def create_locationFromEntityDict_string(dct):
     return locstring
 
 def construct_payload(entities_dict, conversants, topic_list,
-                      topic_names=None, highlights=None, enable_w2v=False):
+                      topic_names=None, highlights=None, 
+                      enable_w2v=False, specific_terms=True):
     """
-    Create the summary string:
-        - create list of conversants
-        - extract the most pertinent entities
-        - frame summary in terms of mood
+    Put it all together to create a synthesized summary string.
     """
     payload_dict = {}
     
@@ -241,8 +236,9 @@ def construct_payload(entities_dict, conversants, topic_list,
     # topics
     if len(topic_list)>0:
         if topic_names:
-            payload = '{0}, broadly: {1}'.format(conversant_string,topic_names[0])
-            payload += '\n in terms of: {0}\n'.format(topic_list)
+            payload = '{0}, broadly: {1}\n'.format(conversant_string,topic_names[0])
+            if specific_terms:
+                payload += 'in terms of: {0}\n'.format(topic_list)
         else:
             payload = '{0} topics: {1}\n'.format(conversant_string, topic_list)
         if enable_w2v:
