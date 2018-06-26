@@ -236,9 +236,9 @@ def construct_payload(entities_dict, conversants, topic_list,
     # topics
     if len(topic_list)>0:
         if topic_names:
-            payload = '{0}, broadly: {1}'.format(conversant_string,topic_names[0])
+            payload = '{0}, broadly: {1}\n'.format(conversant_string,topic_names[0])
             if specific_terms:
-                payload += '\n in terms of: {0}\n'.format(topic_list)
+                payload += 'in terms of: {0}\n'.format(topic_list)
         else:
             payload = '{0} topics: {1}\n'.format(conversant_string, topic_list)
         if enable_w2v:
