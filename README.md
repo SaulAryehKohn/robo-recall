@@ -8,7 +8,7 @@ This library defines the interface and launchpad of `robo-recall`, an NLP bot to
 
 [Slack](https://www.slack.com) is an awesome productivity tool. It's used by 8 million people _daily_, at more than 500,000 organizations. However, users are only _active_ about half the time on they have the software open*. That leaves open the risk of missed messages.
 
-![blah](slack-message.png)
+![blah](slack-message.png) <- scary stuff.
 
 Anyone who's a member of a group text knows the terror of the red bubble with "70 missed messages" written on it. But that shared experience exposes a deficiency in these tools: group chatting applications like Slack, or WhatsApp, or Facebook Messanger are built for the rapid exchange of ideas. When we have to read through a ream of messages that occured while we weren't looking, we're either not using the service correctly, or those services need to improve. 
 
