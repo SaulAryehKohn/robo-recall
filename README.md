@@ -66,6 +66,8 @@ That's quite a bit better than what TextRank could deliver!
 
 [Check it out for yourself](https://github.com/SaulAryehKohn/rebo-recall)! And feel free to [get in touch](mailto:saul.aryeh.kohn@gmail.com) if you want to try running it in your own Slack organization. You just need to include some simple API keys that I'd be happy to talk you through getting.
 
+Finally, I want this tool to have as broad a user base as possible. I'm open-sourcing it under an MIT License, and both Issues and Pull Requests are encouraged. Have fun!
+
 
 
 > * TechCrunch (2016), Slack (2016)
