@@ -29,9 +29,9 @@ VALUE_ERROR_RESPONSE = sref.value_error_response
 
 def parse_bot_commands(slack_events):
     """
-        Parses a list of events coming from the Slack RTM API to find bot commands.
-        If a bot command is found, this function returns a tuple of command and channel.
-        If its not found, then this function returns None, None.
+    Parses a list of events coming from the Slack RTM API to find bot commands.
+    If a bot command is found, this function returns a tuple of command and channel.
+    If its not found, then this function returns None, None.
     """
     for event in slack_events:
         if event["type"] == "message" and not "subtype" in event:
@@ -42,9 +42,9 @@ def parse_bot_commands(slack_events):
 
 def parse_direct_mention(message_text):
     """
-        Finds a direct mention (a mention that is at the beginning) in message text
-        and returns the user ID which was mentioned. 
-        If there is no direct mention, returns None
+    Finds a direct mention (a mention that is at the beginning) in message text
+    and returns the user ID which was mentioned. 
+    If there is no direct mention, returns None
     """
     matches = re.search(MENTION_REGEX, message_text)
     # the first group contains the username, 
@@ -53,7 +53,7 @@ def parse_direct_mention(message_text):
 
 def is_request_valid(request):
     """
-        Catch 400 error
+    Catch 400 error
     """
     is_token_valid = request.form['token'] == os.environ['SLACK_VERIFICATION_TOKEN']
     is_team_id_valid = request.form['team_id'] == os.environ['SLACK_TEAM_ID']
@@ -66,10 +66,10 @@ def is_request_valid(request):
 @task
 def handle_command(request_form, response_url):
     """
-        This (asychronous) task represents the major bot internals.
-        Data cleaning, outlier detection and summarization take place
-        within the "while" clause, since we need to catch service errors
-        from the Slack API and `break` if needed.
+    This (asychronous) task represents the major bot internals.
+    Data cleaning, outlier detection and summarization take place
+    within the "while" clause, since we need to catch service errors
+    from the Slack API and `break` if needed.
     """
 
     # Default response is help text for the user
@@ -98,7 +98,7 @@ def handle_command(request_form, response_url):
         # time-filter
         df = df[df['ts'].astype(float) > ts_oldest]
         
-        # should we continue?
+        # should we continue? - don't summarize < 10 turn convos.
         if len(df)<10:
             response = TOO_FEW_RESPONSE
             break
@@ -130,6 +130,10 @@ def handle_command(request_form, response_url):
     
 @app.route('/summarize',methods=['POST'])
 def summarize():
+    """
+    This defines the slash command. Do all the things,
+    given a user invoking robo-recall with "/summarize".
+    """
     if not is_request_valid(request):
         abort(400)
     handle_command(request.form,request.form['response_url'])

@@ -21,11 +21,6 @@ print('loading LDA model')
 lda = models.ldamodel.LdaModel.load('models/enwiki_ldamodel.model')
 lda_topics_named = pd.read_csv('models/topic_list.csv', index_col=0, header=None, 
                                 names=['index','topic'])
-# This is very slow
-#print('loading word vectors')
-#word_vectors=models.KeyedVectors.load_word2vec_format('data/GoogleNews-vectors-negative300.bin.gz', binary=True)
-# trick get the word_vector object cached for fast querying later
-#_ = word_vectors.most_similar(positive=["apple"])
 
 # entities
 interesting_entity_types = ['EVENT','PERSON','PRODUCT',
@@ -71,7 +66,7 @@ def filter_history(slack_history):
 def get_conversants(df):
     """
     Given a DataFrame with a 'user' column, locate the major talkers.
-    Returns a list of the user tags.
+    Returns a list of the user tags (strings).
     """
     user_set = set(df['user'])
     user_tags = ['<@{}>'.format(id) for id in user_set]
@@ -81,6 +76,8 @@ def extract_entities(conv_string):
     """
     Given a string as input, perform Named Entity Recognition.
     Extract interesting entities to report on in a summary.
+    Returns a dictionary of entity-type-keys, pointing to lists of string
+    entities.
     
     NOTE: Capitalization is important! 
           For example, "Amazon" will be recognized as an organization,
@@ -103,6 +100,8 @@ def extract_highlights(df,react_factor=4):
     Perform outlier detection on emoji-count per-comment.
     Counts deviant by more than react_factor*sigma are classified
     as highlights of the discussion.
+    
+    Returns 'highlights' string ready to print in Slack.
     """
     if 'reactions' in df.columns:
         df['reaction_count'] = df['reactions'].fillna("").apply(
@@ -188,6 +187,7 @@ def create_firstTwoFromDict_string(dct,key):
     """
     Extract first two entries (if there are more than one)
     from dictionary value dct[key] and print prettily.
+    Returns a string.
     """
     kstring = None
     if key in dct:
@@ -196,7 +196,7 @@ def create_firstTwoFromDict_string(dct,key):
         else:
             # take first two
             # XXX this could be improved
-            kstring = '{0} and {1}'.format(*list(dct[key])[:2])
+            kstring = '{0} and {1}'.format(*sorted(list(dct[key]))[:2])
     return kstring
 
 def create_locationFromEntityDict_string(dct):
