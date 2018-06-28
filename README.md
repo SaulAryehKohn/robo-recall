@@ -16,21 +16,21 @@ Enter `robo-recall`.
 
 ## Summarization Required
 
-`robo-recall` is a Slack bot that provides concise, topical summaries of all the stuff you missed on a busy Slack channel. There were [existing](http://autotldr.io/) [summarization tools](https://radimrehurek.com/gensim/summarization/summariser.html) available before `robo-recall`'s inception, but these were built for texts with _narrative structure_. That is, texts with beginnings, middles and ends. A family of algorithms called `TextRank` variants look for the "most representative sentence" out of a text, based on how many of its words are shared with the text as a whole. This works surprisingly well on stuff like news articles… but for dialogs, it just doesn't cut it. Here's a dialog texted between me and my friend Ash while I was working on the project:
+`robo-recall` is a Slack bot that provides concise, topical summaries of all the stuff you missed on a busy Slack channel. There were [existing](http://autotldr.io/) [summarization tools](https://radimrehurek.com/gensim/summarization/summariser.html) available before `robo-recall`'s inception, but these were built for texts with _narrative structure_. That is, texts with beginnings, middles and ends. A family of algorithms called `TextRank` variants look for the "most representative sentence" out of a text, based on how many of its words are shared with the text as a whole. This works surprisingly well on stuff like news articles… but for dialogs, it just doesn't cut it. Here's a dialog texted between me and my friend Maggie while I was working on the project:
 
 ```
 Saul: I'm having trouble with Python
-Ash: What about it?
+Maggie: What about it?
 Saul: I'm getting errors in my implementation of an NLP bot
-Ash: what are you using
+Maggie: what are you using
 Saul: Python, mainly - Flask, scikit, etc
-Ash: what's up with it
+Maggie: what's up with it
 Saul: I'm trying to route it through AWS lambda
 Saul: and I'm getting Memory Errors
-Ash: that happened to me once
-Ash: it's not the Python
-Ash: it came down to the zip file of the underlying Python code
-Ash: it was too big for AWS storage limits
+Maggie: that happened to me once
+Maggie: it's not the Python
+Maggie: it came down to the zip file of the underlying Python code
+Maggie: it was too big for AWS storage limits
 ```
 
 The summary of this conversation using `TextRank` is: **"Python, mainly - Flask, scikit, etc."**. Which, sure, is _one_ of the things that came up, but it doesn't tell a very full story.
@@ -49,14 +49,17 @@ Next I needed to get the nitty-gritty: who and what were chatted about? To achie
 
 Finally, OK. `TextRank` is not ideal for dialog summarization. But it's idea of looking for shared words isn't a bad one! I reframed this idea as Outlier Detection; if a word is mentioned an erroneous number of times, it's probably an important one. I grab these, too.
 
-Running the whole pipe together grants a rather good summary of my dialog! The `robo-recall` output for the dialog between me and Ash is:
+Running the whole pipe together grants a rather good summary of my dialog! The `robo-recall` output for the dialog between me and Maggie is:
 
-**Saul and Ash talked about: data/software**
+![](bot.gif)
+
+**Maggie and Saul talked about: data/software**
 
 **Things that came up were:**
 
-- **Python**
-- **AWS and NLP**
+**- Python**
+
+**- AWS and NLP**
 
 That's quite a bit better than what TextRank could deliver!
 
