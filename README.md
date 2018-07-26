@@ -6,7 +6,7 @@ This library defines the interface and launchpad of `robo-recall`, an NLP bot to
 
 ## Slacking away
 
-[Slack](https://www.slack.com) is an awesome productivity tool. It's used by 8 million people _daily_, at more than 500,000 organizations. However, users are only _active_ about half the time on they have the software open*. That leaves open the risk of missed messages.
+[Slack](https://www.slack.com) is an awesome productivity tool. It's used by 8 million people _daily_, at more than 500,000 organizations. However, users are only _active_ about half the time on they have the software open (TechCrunch 2016, Slack 2016). That leaves open the risk of missed messages.
 
 ![blah](slack-message.png) <- scary stuff.
 
@@ -71,13 +71,7 @@ That's quite a bit better than what TextRank could deliver!
 
 Finally, I want this tool to have as broad a user base as possible. I'm open-sourcing it under an MIT License, and both Issues and Pull Requests are encouraged. Have fun!
 
-
-
-> * TechCrunch (2016), Slack (2016)
-
-
-
-<u>Launch the bot</u>:
+#### Launch the bot:
 
 `source environment_variables.sh` (avialable upon request).
 
